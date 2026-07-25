@@ -1,11 +1,12 @@
 # go-tpm-tls
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/bschaatsbergen/go-tpm-tls.svg)](https://pkg.go.dev/github.com/bschaatsbergen/go-tpm-tls)
-[![Go Report Card](https://goreportcard.com/badge/github.com/bschaatsbergen/go-tpm-tls)](https://goreportcard.com/report/github.com/bschaatsbergen/go-tpm-tls)
+[![CI](https://github.com/bschaatsbergen/go-tpm-tls/actions/workflows/ci.yml/badge.svg)](https://github.com/bschaatsbergen/go-tpm-tls/actions/workflows/ci.yml)
 
 This project provides a [`crypto.Signer`](https://pkg.go.dev/crypto#Signer)
 backed by a key in a TPM, so [`crypto/tls`](https://pkg.go.dev/crypto/tls) can
-authenticate a client or server with it. It is a small layer over
+authenticate a client or server with a key that never leaves the TPM. It is a
+small layer over
 [go-tpm](https://github.com/google/go-tpm) and
 [go-tpm-tools](https://github.com/google/go-tpm-tools).
 
@@ -13,10 +14,9 @@ It does not create keys. It attaches to one that already exists, usually
 provisioned by an attestation agent that generated it inside the TPM and had it
 certified.
 
-The key never enters process memory. `crypto/tls` asks a private key to sign the
-handshake transcript, the TPM does that internally and returns the signature, so
-the process proves possession of a key it never holds. The key also cannot be
-copied to another machine.
+`crypto/tls` asks a private key to sign the handshake transcript. The TPM does
+that internally and returns the signature, so the key is used without ever being
+read out, and there is nothing in process memory to leak or copy elsewhere.
 
 ```go
 cert, err := x509.ParseCertificate(certDER)
@@ -176,27 +176,30 @@ Use an ECDSA key. RSA keys attach and sign, but not the way `crypto/tls` asks:
 TLS wants RSA-PSS at a salt length the TPM will not use, so the handshake fails
 at signing time with an error that does not mention any of this.
 
-A TPM signature is slow next to a software key, and it lands once per full
-handshake. Where the key sits matters too: a transient object is swapped in and
-out around each command, a persistent one is not. Measurements are in
+A TPM signature costs milliseconds where a software key costs microseconds, and
+it lands once per full handshake rather than once per request. Session resumption
+and connection reuse keep it off later connections, which is usually enough to
+make it irrelevant.
+
+Signing is serialized, since a TPM runs one command at a time, so what a machine
+is limited to is new handshakes per second, not requests per second. That limit
+is per machine, since each machine has its own TPM.
+
+Where the key sits matters as much as any of this. A transient object is swapped
+in and out by the kernel resource manager around each command, so every signature
+pays to load the key back in, roughly ten times the cost of a persistent one.
+Measurements are in
 [go-tpm-tls-bench](https://github.com/bschaatsbergen/go-tpm-tls-bench).
 
 ## Tests
 
 ```sh
 go test ./...
+golangci-lint run
 ```
 
 Tests run against the TPM 2.0 reference simulator, so they need no TPM and no
-root. Each one starts by playing the key's owner, creating a key and persisting
-it at a handle, then attaches to it through this package, which is the
-arrangement the package is written for.
-
-They are small and focused, one behaviour each. They cover attaching, signing
-and verification on every curve, concurrent signing, the CSR self signature, a
-full mutual TLS handshake against a server that requires and verifies the client
-certificate, discovery by public key, and the cases that must fail: a restricted
-key, an unknown handle, and RSA.
+root.
 
 ## License
 

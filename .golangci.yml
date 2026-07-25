@@ -1,0 +1,25 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - errorlint
+    - misspell
+    - revive
+    - unconvert
+    - usestdlibvars
+  exclusions:
+    generated: lax
+    presets:
+      - common-false-positives
+    rules:
+      # Tests close what they open; the error is not the subject.
+      - path: _test\.go
+        linters:
+          - errcheck
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

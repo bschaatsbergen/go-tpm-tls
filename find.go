@@ -131,7 +131,7 @@ func OpenForCertificate(device string, cert *x509.Certificate) (*Key, error) {
 
 	key, err := NewForCertificate(rwc, cert)
 	if err != nil {
-		rwc.Close()
+		_ = rwc.Close()
 		return nil, err
 	}
 	key.closer = rwc

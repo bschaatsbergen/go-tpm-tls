@@ -113,7 +113,8 @@ func Open(device string, handle Handle) (*Key, error) {
 	key, err := New(rwc, handle)
 	if err != nil {
 		// New failed, so nobody else holds the transport we just opened.
-		rwc.Close()
+		// Nothing to do with a close error here.
+		_ = rwc.Close()
 		return nil, err
 	}
 	key.closer = rwc

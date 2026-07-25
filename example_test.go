@@ -14,7 +14,7 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/bschaatsbergen/go-tpm-tls"
+	tpmtls "github.com/bschaatsbergen/go-tpm-tls"
 )
 
 // Authenticate to a server with a key the TPM will never release.
