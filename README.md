@@ -1,7 +1,6 @@
 # go-tpm-tls
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/bschaatsbergen/go-tpm-tls.svg)](https://pkg.go.dev/github.com/bschaatsbergen/go-tpm-tls)
-[![CI](https://github.com/bschaatsbergen/go-tpm-tls/actions/workflows/ci.yml/badge.svg)](https://github.com/bschaatsbergen/go-tpm-tls/actions/workflows/ci.yml)
 
 Provides a [`crypto.Signer`](https://pkg.go.dev/crypto#Signer)
 backed by a key in a TPM, so [`crypto/tls`](https://pkg.go.dev/crypto/tls) can
