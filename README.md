@@ -3,7 +3,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/bschaatsbergen/go-tpm-tls.svg)](https://pkg.go.dev/github.com/bschaatsbergen/go-tpm-tls)
 [![CI](https://github.com/bschaatsbergen/go-tpm-tls/actions/workflows/ci.yml/badge.svg)](https://github.com/bschaatsbergen/go-tpm-tls/actions/workflows/ci.yml)
 
-This project provides a [`crypto.Signer`](https://pkg.go.dev/crypto#Signer)
+Provides a [`crypto.Signer`](https://pkg.go.dev/crypto#Signer)
 backed by a key in a TPM, so [`crypto/tls`](https://pkg.go.dev/crypto/tls) can
 authenticate a client or server with a key that never leaves the TPM. It is a
 small layer over
@@ -50,13 +50,20 @@ import "github.com/bschaatsbergen/go-tpm-tls" // package tpmtls
 
 ## Attaching to a key
 
-A `Key` is a key living in a TPM. It implements
-[`crypto.Signer`](https://pkg.go.dev/crypto#Signer), so anything that accepts a
-private key interface accepts it, and it is safe for concurrent use.
+A `Key` is a key in a TPM. It implements
+[`crypto.Signer`](https://pkg.go.dev/crypto#Signer), so it goes straight into a
+[`tls.Config`](https://pkg.go.dev/crypto/tls#Config) as a private key, and it is
+safe for concurrent use.
 
-There are four ways in. Two of them differ in how the key is identified, by
-handle or by the certificate you are about to present, and two in who owns the
-TPM transport.
+Use `OpenForCertificate` and pass the certificate you plan to present. It opens
+the TPM and picks the key whose public half matches, so you do not have to
+configure a handle that differs from machine to machine.
+
+Use `Open` when you do know the handle. Both close the device when you close the
+key.
+
+`New` and `NewForCertificate` are the same two over a TPM connection you already
+have, and they leave it open.
 
 ### `func Open(device string, handle Handle) (*Key, error)`
 
