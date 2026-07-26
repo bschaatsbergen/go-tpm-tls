@@ -14,9 +14,9 @@ It does not create keys. It attaches to one that already exists, usually
 provisioned by an attestation agent that generated it inside the TPM and had it
 certified.
 
-`crypto/tls` asks a private key to sign the handshake transcript. The TPM does
-that internally and returns the signature, so the key is used without ever being
-read out, and there is nothing in process memory to leak or copy elsewhere.
+`crypto/tls` asks a private key to sign the handshake transcript. The TPM signs
+internally and hands back the signature. The key is never read out, so there is
+nothing in process memory to leak.
 
 ```go
 cert, err := x509.ParseCertificate(certDER)
@@ -67,34 +67,30 @@ have, and they leave it open.
 
 ### `func Open(device string, handle Handle) (*Key, error)`
 
-Opens the TPM at `device` and attaches to the key at `handle`. The returned
-`Key` owns the device and closes it on `Close`, so nothing else in the process
-holds that descriptor and there is no ordering for the caller to arrange.
+Opens the TPM at `device` and attaches to the key at `handle`. The `Key` owns
+the device and closes it with `Close`.
 
 `DefaultDevice` is `/dev/tpmrm0`, the Linux resource manager device. Opening it
 usually needs root or membership of the `tss` group.
 
 ### `func New(rw io.ReadWriter, handle Handle) (*Key, error)`
 
-Attaches over a transport you already have, for when the TPM is shared with
-other code in the same process, or in tests against a simulator. The caller
-keeps ownership: `Close` releases the key and leaves the transport open.
+Attaches over a transport you already have. The caller keeps ownership, so
+`Close` releases the key and leaves the transport open. Use it when the TPM is
+shared with other code in the same process, or in tests against a simulator.
 
-Sharing puts ordering on the caller. A TPM answers one command at a time, and a
-single file descriptor carries one exchange at a time. `Sign` takes a lock, so
-concurrent handshakes with one `Key` are safe, but that lock does not cover
-commands the caller sends over `rw` directly.
+Sharing puts ordering on you. A TPM runs one command at a time and a file
+descriptor carries one exchange at a time. `Sign` locks, so concurrent handshakes
+with one `Key` are safe, but the lock does not cover commands you send over `rw`
+yourself.
 
-The handle may be persistent or transient. A transient one only resolves over
-the transport that created it, so it is useful when the same process both
-creates and uses the key, and useless across processes.
+The handle can be persistent or transient. Transient handles only resolve on the
+transport that created them, so they are no use across processes.
 
 ### `func OpenForCertificate(device string, cert *x509.Certificate) (*Key, error)`
 
-Attaches to the key matching the certificate's public key. This is usually the
-call you want. The handle a key sits at is a provisioning decision, so putting
-it in your source couples the application to how one machine was set up, and the
-certificate you are about to present already says which key to sign with.
+Attaches to the key matching the certificate's public key. Usually the call you
+want, since it saves configuring a handle that differs from machine to machine.
 
 ### `func NewForCertificate(rw io.ReadWriter, cert *x509.Certificate) (*Key, error)`
 
@@ -104,16 +100,15 @@ The same, over a transport you already have.
 
 ### `func (k *Key) Sign(rand io.Reader, digest []byte, opts crypto.SignerOpts) ([]byte, error)`
 
-Asks the TPM to sign `digest`. The digest goes in, a signature comes back, and
-the private key stays where it is. This is what `crypto/tls` calls during a
+Asks the TPM to sign `digest`. This is what `crypto/tls` calls during a
 handshake.
 
-Calls are serialized, since a TPM executes one command at a time. A signature
-costs milliseconds rather than microseconds, and lands once per full handshake.
+Calls are serialized, since a TPM runs one command at a time. Expect
+milliseconds, once per full handshake.
 
 ### `func (k *Key) Public() crypto.PublicKey`
 
-Returns the public half, read once when the key was loaded.
+Returns the public half.
 
 ### `func (k *Key) TLSCertificate(chain ...[]byte) tls.Certificate`
 
@@ -128,54 +123,47 @@ cfg := &tls.Config{
 }
 ```
 
-Nothing here is special to TPMs. `crypto/tls` accepts any `crypto.Signer` as a
-private key, which is the same door PKCS#11 modules and cloud KMS keys come
-through.
+Nothing here is TPM specific. `crypto/tls` takes any `crypto.Signer` as a private
+key, the same as a PKCS#11 module or a cloud KMS.
 
 ### `func (k *Key) CertificateRequest(template *x509.CertificateRequest) ([]byte, error)`
 
-Creates a DER encoded CSR for this key, signed by the TPM. A CSR is how a
-certificate authority learns which public key to certify, and its self signature
-proves the requester holds the private half. Since the TPM produces that
-signature, the proof is as strong as the key.
+Creates a DER encoded CSR, signed by the TPM. The self signature is what proves
+to the issuer that this machine holds the private half.
 
-A `nil` template asks for a certificate with no subject and no SANs, which is
-what an issuer that derives those itself expects.
+Pass `nil` for a request with no subject and no SANs, which is what an issuer
+that derives those itself expects.
 
 ### `func (k *Key) NonExportable() (bool, error)`
 
-Reports whether the TPM will refuse to release or duplicate the private key. It
-reads the attributes back from the TPM, so the answer is what the TPM enforces
-rather than what the key's creator intended.
+Reports whether the TPM will refuse to release or duplicate the key. Read from
+the TPM itself, not from the template the key was created with.
 
 ### `func (k *Key) Handle() Handle`
 
 Returns the handle the key is loaded at. `Handle` is an alias for
 [`tpmutil.Handle`](https://pkg.go.dev/github.com/google/go-tpm/tpmutil#Handle),
-so callers need not import go-tpm to name one.
+so you do not need to import go-tpm to name one.
 
 ### `func (k *Key) Close() error`
 
-Releases this reference to the key, and closes the device if `Open` opened it.
-Safe to call more than once.
+Releases the key, and closes the device if `Open` opened it. Safe to call twice.
 
-The key itself survives. A persistent handle belongs to whoever created it, and
-removing one takes an eviction this package does not perform: detaching from a
-key you did not provision should not destroy it for everyone else on the
-machine.
+The key itself stays put. Removing a persistent key takes an eviction, which this
+package never does: detaching from a key you did not provision should not destroy
+it for everything else on the machine.
 
 ## Finding a key
 
 ### `func FindHandle(rw io.ReadWriter, pub crypto.PublicKey) (Handle, error)`
 
 Returns the handle of the persistent key whose public half is `pub`, or
-`ErrNotFound`. This is what `OpenForCertificate` uses, exported for when you
-want the handle rather than the key.
+`ErrNotFound`. What `OpenForCertificate` uses, exported for when you want the
+handle and not the key.
 
 ### `func PersistentHandles(rw io.ReadWriter) ([]Handle, error)`
 
-Lists the persistent handles present in the TPM, for when you want to see what a
-machine holds rather than guess.
+Lists the persistent handles in the TPM.
 
 ## Notes
 
