@@ -17,23 +17,24 @@ certified.
 internally and hands back the signature. The key is never read out, so there is
 nothing in process memory to leak.
 
-```go
-cert, err := x509.ParseCertificate(certDER)
-if err != nil {
-	return err
-}
+The only input is the certificate you plan to present:
 
+```go
+// The certificate picks the key, so there is nothing to configure.
 key, err := tpmtls.OpenForCertificate(tpmtls.DefaultDevice, cert)
 if err != nil {
 	return err
 }
 defer key.Close()
 
-conn, err := tls.Dial("tcp", "store.example.com:443", &tls.Config{
+cfg := &tls.Config{
+	Certificates: []tls.Certificate{key.TLSCertificate(cert.Raw)},
 	MinVersion:   tls.VersionTLS13,
-	Certificates: []tls.Certificate{key.TLSCertificate(certDER)},
-})
+}
 ```
+
+The same config serves a client or a server: pass it to `tls.Dial`,
+`tls.Listen`, or an `http.Server`.
 
 ## Install
 
